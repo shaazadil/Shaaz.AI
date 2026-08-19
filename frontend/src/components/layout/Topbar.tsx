@@ -12,7 +12,7 @@ export function Topbar() {
         <span className="font-semibold text-zinc-100">Shaaz AI</span>
       </div>
       <div className="hidden md:block">
-        <span className="text-sm font-medium text-zinc-400">New Chat</span>
+        {/* Placeholder for future dynamic title if needed */}
       </div>
       <div className="flex items-center gap-2">
         <IconButton aria-label="Settings">

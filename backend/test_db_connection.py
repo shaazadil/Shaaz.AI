@@ -1,4 +1,5 @@
 from database.connection import engine
+# pyrefly: ignore [missing-import]
 from sqlalchemy import text
 
 def test_connection():

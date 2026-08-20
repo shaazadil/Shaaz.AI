@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api import chat
+from api import chat, conversations
 
 app = FastAPI(
     title="Shaaz AI API",
@@ -17,6 +17,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router, prefix="/api")
+app.include_router(conversations.router, prefix="/api")
 
 @app.get("/api/health")
 async def health_check():

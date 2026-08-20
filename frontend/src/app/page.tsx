@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -10,6 +10,42 @@ export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Load from local storage on mount
+  useEffect(() => {
+    const savedConversations = localStorage.getItem('shaaz_conversations');
+    const savedActiveId = localStorage.getItem('shaaz_active_conversation_id');
+    
+    if (savedConversations) {
+      try {
+        const parsed = JSON.parse(savedConversations);
+        setConversations(parsed);
+        if (savedActiveId && parsed.some((c: Conversation) => c.id === savedActiveId)) {
+          setActiveConversationId(savedActiveId);
+        } else if (parsed.length > 0) {
+          setActiveConversationId(parsed[0].id);
+        }
+      } catch (e) {
+        console.error('Failed to parse conversations', e);
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  // Save to local storage whenever conversations change
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem('shaaz_conversations', JSON.stringify(conversations));
+    }
+  }, [conversations, isLoaded]);
+
+  // Save active conversation id whenever it changes
+  useEffect(() => {
+    if (isLoaded && activeConversationId) {
+      localStorage.setItem('shaaz_active_conversation_id', activeConversationId);
+    }
+  }, [activeConversationId, isLoaded]);
 
   const handleNewChat = () => {
     const newId = Date.now().toString();
@@ -45,7 +81,9 @@ export default function Home() {
     setConversations(filtered);
   };
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = async (content: string) => {
+    if (isTyping) return; // Prevent duplicate submissions
+    
     let targetId = activeConversationId;
     
     // If no active conversation, create one implicitly
@@ -87,12 +125,26 @@ export default function Home() {
     
     setIsTyping(true);
 
-    // Simulate assistant response
-    setTimeout(() => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const response = await fetch(`${apiUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: content }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Backend is unavailable');
+      }
+
+      const data = await response.json();
+      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `I'm a simulated local AI. You said: "${content}"\n\nThis is just a mock response for now to demonstrate the UI!`,
+        content: data.reply,
       };
       
       setConversations(prev => prev.map(conv => {
@@ -104,12 +156,31 @@ export default function Home() {
         }
         return conv;
       }));
+    } catch (error) {
+      console.error('Error fetching chat response:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: "Error: Unable to reach the Shaaz AI backend. Please make sure it is running.",
+      };
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === targetId) {
+          return {
+            ...conv,
+            messages: [...conv.messages, errorMessage]
+          };
+        }
+        return conv;
+      }));
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const activeConversation = conversations.find(c => c.id === activeConversationId);
   const activeMessages = activeConversation ? activeConversation.messages : [];
+
+  if (!isLoaded) return null;
 
   return (
     <div className="flex h-screen w-full bg-transparent text-zinc-100 overflow-hidden font-sans">

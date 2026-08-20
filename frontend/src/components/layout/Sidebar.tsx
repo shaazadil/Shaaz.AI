@@ -24,8 +24,13 @@ export function Sidebar({
   const now = Date.now();
   const oneDay = 24 * 60 * 60 * 1000;
   
-  const today = conversations.filter(c => now - c.createdAt < oneDay);
-  const previous = conversations.filter(c => now - c.createdAt >= oneDay);
+  const getCreatedAtTime = (c: Conversation) => {
+    if (!c.createdAt) return 0;
+    return typeof c.createdAt === 'number' ? c.createdAt : new Date(c.createdAt).getTime();
+  };
+
+  const today = conversations.filter(c => now - getCreatedAtTime(c) < oneDay);
+  const previous = conversations.filter(c => now - getCreatedAtTime(c) >= oneDay);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -54,22 +59,22 @@ export function Sidebar({
   const renderConversationItem = (c: Conversation) => (
     <div 
       key={c.id} 
-      onClick={() => onSelectConversation(c.id)}
-      className={`w-full flex items-center justify-between px-2 py-2 text-sm rounded-md transition-colors cursor-pointer group relative ${c.id === activeConversationId ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
+      onClick={() => onSelectConversation(c.id.toString())}
+      className={`w-full flex items-center justify-between px-2 py-2 text-sm rounded-md transition-colors cursor-pointer group relative ${c.id.toString() === activeConversationId ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'}`}
     >
       <span className="truncate flex-1 pr-2">{c.title}</span>
       <button 
         onClick={(e) => {
           e.stopPropagation();
-          setMenuOpenId(menuOpenId === c.id ? null : c.id);
+          setMenuOpenId(menuOpenId === c.id.toString() ? null : c.id.toString());
         }}
-        className={`p-1 rounded hover:bg-zinc-700/50 transition-opacity flex-shrink-0 ${menuOpenId === c.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+        className={`p-1 rounded hover:bg-zinc-700/50 transition-opacity flex-shrink-0 ${menuOpenId === c.id.toString() ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
         aria-label="Conversation options"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
       </button>
 
-      {menuOpenId === c.id && (
+      {menuOpenId === c.id.toString() && (
         <div 
           className="absolute right-2 top-8 w-32 bg-zinc-800 border border-zinc-700 rounded-md shadow-lg py-1 z-50"
           onClick={(e) => e.stopPropagation()}
@@ -78,7 +83,7 @@ export function Sidebar({
             className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmDeleteId(c.id);
+              setConfirmDeleteId(c.id.toString());
               setMenuOpenId(null);
             }}
           >

@@ -6,132 +6,173 @@ import { Topbar } from "@/components/layout/Topbar";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { Conversation, Message } from "@/types/chat";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
 export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | number | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from local storage on mount
+  // Helper to get active conversation
+  const activeConversation = conversations.find(c => c.id.toString() === activeConversationId?.toString());
+  const activeMessages = activeConversation ? activeConversation.messages : [];
+
+  // Fetch conversations on mount
   useEffect(() => {
-    const savedConversations = localStorage.getItem('shaaz_conversations');
-    const savedActiveId = localStorage.getItem('shaaz_active_conversation_id');
-    
-    if (savedConversations) {
+    const fetchConversations = async () => {
       try {
-        const parsed = JSON.parse(savedConversations);
-        setConversations(parsed);
-        if (savedActiveId && parsed.some((c: Conversation) => c.id === savedActiveId)) {
-          setActiveConversationId(savedActiveId);
-        } else if (parsed.length > 0) {
-          setActiveConversationId(parsed[0].id);
+        const res = await fetch(`${API_URL}/api/conversations`);
+        if (res.ok) {
+          const data = await res.json();
+          // Ensure messages array is present
+          const processed = data.map((c: any) => ({ ...c, messages: [] }));
+          setConversations(processed);
+          
+          const savedActiveId = localStorage.getItem('shaaz_active_conversation_id');
+          if (savedActiveId && processed.some((c: Conversation) => c.id.toString() === savedActiveId)) {
+            setActiveConversationId(savedActiveId);
+          } else if (processed.length > 0) {
+            setActiveConversationId(processed[0].id);
+          }
         }
-      } catch (e) {
-        console.error('Failed to parse conversations', e);
+      } catch (err) {
+        console.error("Failed to load conversations:", err);
+      } finally {
+        setIsLoaded(true);
       }
-    }
-    setIsLoaded(true);
+    };
+    fetchConversations();
   }, []);
 
-  // Save to local storage whenever conversations change
+  // Fetch messages whenever active conversation changes
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('shaaz_conversations', JSON.stringify(conversations));
-    }
-  }, [conversations, isLoaded]);
+    if (!activeConversationId) return;
 
-  // Save active conversation id whenever it changes
-  useEffect(() => {
-    if (isLoaded && activeConversationId) {
-      localStorage.setItem('shaaz_active_conversation_id', activeConversationId);
-    }
-  }, [activeConversationId, isLoaded]);
+    // Save active id to local storage
+    localStorage.setItem('shaaz_active_conversation_id', activeConversationId.toString());
 
-  const handleNewChat = () => {
-    const newId = Date.now().toString();
-    const newConversation: Conversation = {
-      id: newId,
-      title: "New Chat",
-      messages: [],
-      createdAt: Date.now()
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/conversations/${activeConversationId}/messages`);
+        if (res.ok) {
+          const messages = await res.json();
+          setConversations(prev => prev.map(c => 
+            c.id.toString() === activeConversationId.toString() ? { ...c, messages } : c
+          ));
+        }
+      } catch (err) {
+        console.error(`Failed to load messages for conversation ${activeConversationId}:`, err);
+      }
     };
-    
-    setConversations(prev => [newConversation, ...prev]);
-    setActiveConversationId(newId);
+    fetchMessages();
+  }, [activeConversationId]);
+
+  const handleNewChat = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/conversations`, {
+        method: "POST"
+      });
+      if (res.ok) {
+        const newConversation = await res.json();
+        newConversation.messages = [];
+        setConversations(prev => [newConversation, ...prev]);
+        setActiveConversationId(newConversation.id);
+      }
+    } catch (err) {
+      console.error("Failed to create new chat:", err);
+    }
   };
 
-  const handleDeleteConversation = (id: string) => {
-    const filtered = conversations.filter(c => c.id !== id);
-    
-    if (activeConversationId === id) {
-      if (filtered.length > 0) {
-        setActiveConversationId(filtered[0].id);
-      } else {
-        const newId = Date.now().toString();
-        const newConversation: Conversation = {
-          id: newId,
-          title: "New Chat",
-          messages: [],
-          createdAt: Date.now()
-        };
-        filtered.unshift(newConversation);
-        setActiveConversationId(newId);
+  const handleDeleteConversation = async (id: string | number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/conversations/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        const filtered = conversations.filter(c => c.id.toString() !== id.toString());
+        setConversations(filtered);
+        
+        if (activeConversationId?.toString() === id.toString()) {
+          if (filtered.length > 0) {
+            setActiveConversationId(filtered[0].id);
+          } else {
+            setActiveConversationId(null);
+            handleNewChat(); // Create an empty one
+          }
+        }
       }
+    } catch (err) {
+      console.error("Failed to delete conversation:", err);
     }
-    setConversations(filtered);
   };
 
   const handleSendMessage = async (content: string) => {
-    if (isTyping) return; // Prevent duplicate submissions
+    if (isTyping) return;
     
     let targetId = activeConversationId;
     
-    // If no active conversation, create one implicitly
+    // Create conversation first if none exists
     if (!targetId) {
-      const newId = Date.now().toString();
-      targetId = newId;
-      const title = content.length > 30 ? content.substring(0, 30) + "..." : content;
-      const newConversation: Conversation = {
-        id: newId,
-        title,
-        messages: [],
-        createdAt: Date.now()
-      };
-      setConversations(prev => [newConversation, ...prev]);
-      setActiveConversationId(newId);
-    }
-    
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content,
-    };
-
-    setConversations(prev => prev.map(conv => {
-      if (conv.id === targetId) {
-        // Update title if it's the first message and it was just "New Chat"
-        let newTitle = conv.title;
-        if (conv.messages.length === 0 || conv.title === "New Chat") {
-          newTitle = content.length > 30 ? content.substring(0, 30) + "..." : content;
+      try {
+        const res = await fetch(`${API_URL}/api/conversations`, {
+          method: "POST"
+        });
+        if (res.ok) {
+          const newConversation = await res.json();
+          newConversation.messages = [];
+          setConversations(prev => [newConversation, ...prev]);
+          setActiveConversationId(newConversation.id);
+          targetId = newConversation.id;
         }
-        return {
-          ...conv,
-          title: newTitle,
-          messages: [...conv.messages, userMessage]
-        };
+      } catch (err) {
+        console.error("Failed to create new chat:", err);
+        return;
       }
-      return conv;
-    }));
+    }
+
+    if (!targetId) return;
+
+    // Save user message to backend
+    try {
+      const userMsgRes = await fetch(`${API_URL}/api/conversations/${targetId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "user", content })
+      });
+      
+      if (userMsgRes.ok) {
+        const savedUserMessage = await userMsgRes.json();
+        setConversations(prev => prev.map(conv => {
+          if (conv.id.toString() === targetId!.toString()) {
+            // Update title on first message
+            if (conv.messages.length === 0 || conv.title === "New Chat") {
+              const newTitle = content.length > 30 ? content.substring(0, 30) + "..." : content;
+              // Fire and forget title update
+              fetch(`${API_URL}/api/conversations/${targetId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: newTitle })
+              }).catch(console.error);
+              return { ...conv, title: newTitle, messages: [...conv.messages, savedUserMessage] };
+            }
+            return { ...conv, messages: [...conv.messages, savedUserMessage] };
+          }
+          return conv;
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to save user message:", err);
+      return;
+    }
     
     setIsTyping(true);
 
+    // Get AI response
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      const response = await fetch(`${apiUrl}/api/chat`, {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content }),
       });
 
@@ -141,34 +182,34 @@ export default function Home() {
 
       const data = await response.json();
       
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.reply,
-      };
-      
-      setConversations(prev => prev.map(conv => {
-        if (conv.id === targetId) {
-          return {
-            ...conv,
-            messages: [...conv.messages, assistantMessage]
-          };
-        }
-        return conv;
-      }));
+      // Save AI message to backend
+      const aiMsgRes = await fetch(`${API_URL}/api/conversations/${targetId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "assistant", content: data.reply })
+      });
+
+      if (aiMsgRes.ok) {
+        const savedAiMessage = await aiMsgRes.json();
+        setConversations(prev => prev.map(conv => {
+          if (conv.id.toString() === targetId!.toString()) {
+            return { ...conv, messages: [...conv.messages, savedAiMessage] };
+          }
+          return conv;
+        }));
+      }
+
     } catch (error) {
       console.error('Error fetching chat response:', error);
+      // Fallback local error message (not saved to db as it's an error)
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: Date.now().toString(),
         role: 'assistant',
         content: "Error: Unable to reach the Shaaz AI backend. Please make sure it is running.",
       };
       setConversations(prev => prev.map(conv => {
-        if (conv.id === targetId) {
-          return {
-            ...conv,
-            messages: [...conv.messages, errorMessage]
-          };
+        if (conv.id.toString() === targetId!.toString()) {
+          return { ...conv, messages: [...conv.messages, errorMessage] };
         }
         return conv;
       }));
@@ -177,17 +218,14 @@ export default function Home() {
     }
   };
 
-  const activeConversation = conversations.find(c => c.id === activeConversationId);
-  const activeMessages = activeConversation ? activeConversation.messages : [];
-
   if (!isLoaded) return null;
 
   return (
     <div className="flex h-screen w-full bg-transparent text-zinc-100 overflow-hidden font-sans">
       <Sidebar 
         conversations={conversations} 
-        activeConversationId={activeConversationId}
-        onSelectConversation={setActiveConversationId}
+        activeConversationId={activeConversationId?.toString() || null}
+        onSelectConversation={(id) => setActiveConversationId(id)}
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}
       />

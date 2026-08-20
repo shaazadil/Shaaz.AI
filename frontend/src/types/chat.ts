@@ -1,12 +1,13 @@
 export type Message = {
-  id: string;
+  id: string | number;
   role: "user" | "assistant";
   content: string;
 };
 
 export type Conversation = {
-  id: string;
-  title: string;
+  id: string | number;
+  title: string | null;
   messages: Message[];
-  createdAt: number;
+  createdAt?: string | number;
+  updatedAt?: string | number;
 };

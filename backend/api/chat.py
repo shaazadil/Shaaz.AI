@@ -9,8 +9,6 @@ from database.connection import get_db
 
 router = APIRouter()
 
-SYSTEM_PROMPT = "You are Shaaz AI, a helpful AI assistant. Be clear, conversational, friendly, and concise."
-
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     # 1. Verify conversation exists
@@ -29,7 +27,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     history = get_messages_for_conversation(db, request.conversation_id)
     
     # 4 & 5. Call AI Service to get Llama response
-    assistant_reply = await generate_ai_response(SYSTEM_PROMPT, history)
+    assistant_reply = await generate_ai_response(history)
     
     # 6. Save assistant response to PostgreSQL
     assistant_message = MessageCreate(role="assistant", content=assistant_reply)

@@ -134,19 +134,28 @@ export default function Home() {
     if (!targetId) return;
 
     // Add temporary user message for immediate UI update
-    const tempUserMsg = { id: Date.now().toString(), role: "user", content };
+    const tempUserMsg: Message = { id: Date.now().toString(), role: "user", content };
+
+    // Check if title needs to be updated
+    const activeConv = conversations.find(conv => conv.id.toString() === targetId!.toString());
+    const needsTitleUpdate = activeConv && (activeConv.messages.length === 0 || activeConv.title === "New Chat");
+    const newTitle = needsTitleUpdate ? (content.length > 30 ? content.substring(0, 30) + "..." : content) : null;
+
+    if (newTitle) {
+      fetch(`${API_URL}/api/conversations/${targetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle })
+      }).catch(console.error);
+    }
+
     setConversations(prev => prev.map(conv => {
       if (conv.id.toString() === targetId!.toString()) {
-        if (conv.messages.length === 0 || conv.title === "New Chat") {
-          const newTitle = content.length > 30 ? content.substring(0, 30) + "..." : content;
-          fetch(`${API_URL}/api/conversations/${targetId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: newTitle })
-          }).catch(console.error);
-          return { ...conv, title: newTitle, messages: [...conv.messages, tempUserMsg] };
-        }
-        return { ...conv, messages: [...conv.messages, tempUserMsg] };
+        return {
+          ...conv,
+          title: newTitle || conv.title,
+          messages: [...conv.messages, tempUserMsg]
+        };
       }
       return conv;
     }));
@@ -158,7 +167,7 @@ export default function Home() {
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content, conversation_id: targetId }),
+        body: JSON.stringify({ message: content, conversation_id: Number(targetId) }),
       });
 
       if (!response.ok) {
